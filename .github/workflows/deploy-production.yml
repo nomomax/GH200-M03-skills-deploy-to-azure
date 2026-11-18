@@ -1,0 +1,54 @@
+name: Deploy to Production (Cloudflare Pages)
+
+on:
+  push:
+    branches:
+      - main
+
+env:
+  PROJECT_NAME: gh200-tictactoe-app
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    # 關鍵考點：綁定已設定防護規則的 production 環境
+    environment:
+      name: production
+      url: ${{ steps.deploy.outputs.url }}
+
+    permissions:
+      contents: read
+      deployments: write
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies & Build
+        run: |
+          npm ci
+          npm run build
+          mkdir -p dist
+          cp index.html dist/
+          cp -r public dist/
+
+      - name: Deploy to Cloudflare Pages (Production)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          # 1. 若專案尚未建立，自動建立 Cloudflare Pages 專案（若已存在則忽略）
+          npx --yes wrangler pages project create ${{ env.PROJECT_NAME }} --production-branch=main || true
+          # 2. 發布至 Production 正式環境
+          npx --yes wrangler pages deploy dist --project-name=${{ env.PROJECT_NAME }} --branch=main --commit-dirty=true
+
+      - name: Workflow Status Summary
+        run: |
+          echo "### 🎉 Production 正式環境發布完成" >> $GITHUB_STEP_SUMMARY
+          echo "- **正式上線網址**: [https://${{ env.PROJECT_NAME }}.pages.dev](https://${{ env.PROJECT_NAME }}.pages.dev)" >> $GITHUB_STEP_SUMMARY
